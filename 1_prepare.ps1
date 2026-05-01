@@ -11,7 +11,7 @@ param(
     [string]$CudaRoot    = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA",
     [string]$CudnnRoot   = "C:\Program Files\NVIDIA\CUDNN\v9.21",
     [string]$CondaEnv    = "pytorch-build",
-    [string]$PythonVer   = "3.13",
+    [string]$PythonVer   = "3.12",
     [switch]$Force       # re-install deps even if already present
 )
 
@@ -289,7 +289,7 @@ $archList = switch -Wildcard ($CudaVersion) {
 `$env:USE_TEST                    = "0"
 
 # --- Parallelism ---
-`$env:CMAKE_BUILD_PARALLEL_LEVEL  = "$([Environment]::ProcessorCount - 4)"
+`$env:CMAKE_BUILD_PARALLEL_LEVEL  = "$([Environment]::ProcessorCount - 6)"
 `$env:MAX_JOBS                    = "4"
 
 # --- NVCC extra flags ---
