@@ -4,7 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { clientDistPath, isBuiltServer, repoRoot } from "./paths.js";
 import { loadBuildOptions, loadVersions } from "./github.js";
 import { loadConfig, saveConfig } from "./config.js";
-import { cancelPipeline, getPipeline, getRuntime, startPipeline } from "./pipeline.js";
+import { cancelPipeline, getPipeline, getRuntime, startPipeline, listPreviousRuns, getPreviousRun, getSuccessfulStages } from "./pipeline.js";
 import type { BuildConfig } from "./types.js";
 
 const port = Number(process.env.PORT || 4173);
@@ -97,6 +97,34 @@ app.get("/api/pipeline/:runId/events", (request, response) => {
     runtime.emitter.off("status", onStatus);
     runtime.emitter.off("done", onDone);
   });
+});
+
+app.get("/api/pipeline/previous-runs", async (_request, response, next) => {
+  try {
+    const runs = await listPreviousRuns();
+    response.json(runs);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/pipeline/:runId/previous", async (request, response, next) => {
+  try {
+    const run = await getPreviousRun(request.params.runId);
+    if (!run) response.status(404).json({ error: "Previous run not found" });
+    else response.json(run);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/pipeline/:runId/successful-stages", async (request, response, next) => {
+  try {
+    const stages = await getSuccessfulStages(request.params.runId);
+    response.json({ stages });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {

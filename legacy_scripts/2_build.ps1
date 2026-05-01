@@ -113,7 +113,7 @@ Push-Location $script:PyTorchDir
 
     if ($SkipTest) 
     { 
-        $env:CMAKE_ARGS += " -DBUILD_TEST=OFF -DBUILD_TEST=0" 
+        $env:CMAKE_ARGS += " -DBUILD_TEST=OFF" 
     }
 
     # Put the 2022 compiler folder at the VERY START of the PATH

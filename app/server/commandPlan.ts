@@ -36,9 +36,15 @@ export function createCheckoutPlan(config: BuildConfig): CommandPlan[] {
 
   return [
     {
+      label: "Clean up conflicting tags",
+      command: "git",
+      args: ["fetch", "--prune", "origin", "refs/tags/*:refs/tags/*"],
+      cwd: config.pytorchDir
+    },
+    {
       label: "Fetch PyTorch source",
       command: "git",
-      args: ["fetch", "--tags", "origin"],
+      args: ["fetch", "--tags", "--force", "origin"],
       cwd: config.pytorchDir
     },
     {

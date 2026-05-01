@@ -76,8 +76,8 @@ label span {
 .app-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 320px minmax(420px, 1fr) 390px;
-  grid-template-rows: 1fr auto;
+  grid-template-columns: 320px minmax(420px, 1fr);
+  grid-template-rows: 1fr auto auto;
   gap: 16px;
   padding: 16px;
 }
@@ -279,12 +279,15 @@ small {
 }
 
 .telemetry-panel {
+  grid-column: 1 / -1;
   border-radius: 8px;
   padding: 14px;
   display: grid;
-  grid-template-rows: 1.2fr 1fr;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto 1fr;
   gap: 14px;
-  min-width: 0;
+  min-height: 300px;
+  max-height: 450px;
 }
 
 .log-card,
@@ -344,7 +347,6 @@ pre {
   .telemetry-panel {
     grid-column: 1 / -1;
     grid-template-columns: 1fr 1fr;
-    grid-template-rows: minmax(280px, 1fr);
   }
 }
 

@@ -34,6 +34,8 @@ export interface BuildConfig {
   extraEnv: Record<string, string>;
   skipTest: boolean;
   forceDependencies: boolean;
+  resumeFromStage?: string;
+  resumeFromRunId?: string;
 }
 
 export interface PipelineStage {
@@ -52,8 +54,15 @@ export interface PipelineRun {
   activeStage?: string;
   stages: PipelineStage[];
   artifact?: string;
+  resumedFromRunId?: string;
+  skippedStages?: string[];
   error?: string;
   envJson?: unknown;
+  buildConfig?: {
+    selectedRef: string;
+    selectedRefKind: VersionKind;
+    pytorchDir: string;
+  };
 }
 
 export interface CommandPlan {

@@ -6,6 +6,7 @@ import type { BuildConfig, CommandPlan, PipelineRun, PipelineStage } from "./typ
 import { runsDir } from "./paths.js";
 import { createBuildPlan, createCheckoutPlan, createDependencyPlan } from "./commandPlan.js";
 import { prepareEnvironment } from "./environment.js";
+import { existsSync } from "node:fs";
 
 interface RuntimeRun {
   run: PipelineRun;
@@ -93,29 +94,148 @@ async function finish(runtime: RuntimeRun, status: PipelineRun["status"], error?
     // Artifact remains pending.
   }
 
+  // Persist run state for future resumption
+  await persistRunState(runtime.run);
+
   emitStatus(runtime, true);
+}
+
+async function persistRunState(run: PipelineRun): Promise<void> {
+  try {
+    const runPath = path.join(runsDir, `${run.id}.json`);
+    await fs.writeFile(runPath, JSON.stringify(run, null, 2));
+  } catch (error) {
+    console.error("Failed to persist run state:", error);
+  }
+}
+
+async function loadRunState(runId: string): Promise<PipelineRun | null> {
+  try {
+    const runPath = path.join(runsDir, `${runId}.json`);
+    if (!existsSync(runPath)) return null;
+    const data = await fs.readFile(runPath, "utf-8");
+    return JSON.parse(data) as PipelineRun;
+  } catch (error) {
+    console.error("Failed to load run state:", error);
+    return null;
+  }
+}
+
+function getStageIndex(stageId: string): number {
+  return stageTemplates.findIndex((s) => s.id === stageId);
+}
+
+function shouldSkipStage(previousRun: PipelineRun, stageId: string, config: BuildConfig, resumeFromStage?: string): boolean {
+  // Don't skip if this is the resume point
+  if (resumeFromStage && stageId === resumeFromStage) return false;
+  
+  // Skip stages before the resume point
+  if (resumeFromStage && getStageIndex(stageId) < getStageIndex(resumeFromStage)) {
+    return true;
+  }
+
+  // Special handling for checkout: only skip if config hasn't changed
+  if (stageId === "checkout") {
+    const prevConfig = previousRun.buildConfig;
+    if (!prevConfig) return false; // Don't skip if we don't have previous config
+    
+    // If ref or pytorch directory changed, we must re-checkout
+    if (prevConfig.selectedRef !== config.selectedRef || prevConfig.pytorchDir !== config.pytorchDir) {
+      return false;
+    }
+  }
+
+  // Skip stages that already succeeded in the previous run
+  const stage = previousRun.stages.find((s) => s.id === stageId);
+  return stage?.status === "succeeded";
 }
 
 async function executePipeline(runtime: RuntimeRun, config: BuildConfig): Promise<void> {
   try {
-    setStage(runtime, "checkout", "running");
-    await runPlans(runtime, createCheckoutPlan(config));
-    setStage(runtime, "checkout", "succeeded");
+    let previousRun: PipelineRun | null = null;
+    let skippedStages: string[] = [];
 
-    setStage(runtime, "prepare", "running");
-    const envJson = await prepareEnvironment(config);
-    runtime.run.envJson = envJson;
-    log(runtime, "Generated src/env.json");
-    setStage(runtime, "prepare", "succeeded");
+    // Load previous run if resuming
+    if (config.resumeFromRunId) {
+      previousRun = await loadRunState(config.resumeFromRunId);
+      if (previousRun) {
+        runtime.run.resumedFromRunId = config.resumeFromRunId;
+        log(runtime, `Resuming from run ${config.resumeFromRunId}`);
+      }
+    }
 
-    setStage(runtime, "dependencies", "running");
-    await runPlans(runtime, createDependencyPlan(config));
-    setStage(runtime, "dependencies", "succeeded");
+    // Store current build config for future resume operations
+    runtime.run.buildConfig = {
+      selectedRef: config.selectedRef,
+      selectedRefKind: config.selectedRefKind,
+      pytorchDir: config.pytorchDir
+    };
 
-    setStage(runtime, "build", "running");
-    await runPlans(runtime, createBuildPlan(config, envJson.build.python_executable, envJson.environment));
-    setStage(runtime, "build", "succeeded");
+    // Checkout stage
+    if (!previousRun || !shouldSkipStage(previousRun, "checkout", config, config.resumeFromStage)) {
+      setStage(runtime, "checkout", "running");
+      await runPlans(runtime, createCheckoutPlan(config));
+      setStage(runtime, "checkout", "succeeded");
+    } else {
+      skippedStages.push("checkout");
+      const stage = previousRun.stages.find((s) => s.id === "checkout");
+      if (stage) {
+        const stageIdx = runtime.run.stages.findIndex((s) => s.id === "checkout");
+        if (stageIdx !== -1) runtime.run.stages[stageIdx] = { ...stage };
+      }
+      log(runtime, "Skipping checkout (already succeeded with same ref)");
+    }
 
+    // Prepare env.json stage
+    let envJson = previousRun?.envJson;
+    if (!previousRun || !shouldSkipStage(previousRun, "prepare", config, config.resumeFromStage)) {
+      setStage(runtime, "prepare", "running");
+      envJson = await prepareEnvironment(config);
+      runtime.run.envJson = envJson;
+      log(runtime, "Generated src/env.json");
+      setStage(runtime, "prepare", "succeeded");
+    } else {
+      skippedStages.push("prepare");
+      const stage = previousRun.stages.find((s) => s.id === "prepare");
+      if (stage) {
+        const stageIdx = runtime.run.stages.findIndex((s) => s.id === "prepare");
+        if (stageIdx !== -1) runtime.run.stages[stageIdx] = { ...stage };
+      }
+      log(runtime, "Skipping prepare (already succeeded)");
+    }
+
+    // Dependencies stage
+    if (!previousRun || !shouldSkipStage(previousRun, "dependencies", config, config.resumeFromStage)) {
+      setStage(runtime, "dependencies", "running");
+      await runPlans(runtime, createDependencyPlan(config));
+      setStage(runtime, "dependencies", "succeeded");
+    } else {
+      skippedStages.push("dependencies");
+      const stage = previousRun.stages.find((s) => s.id === "dependencies");
+      if (stage) {
+        const stageIdx = runtime.run.stages.findIndex((s) => s.id === "dependencies");
+        if (stageIdx !== -1) runtime.run.stages[stageIdx] = { ...stage };
+      }
+      log(runtime, "Skipping dependencies (already succeeded)");
+    }
+
+    // Build stage (always run unless explicitly at this stage and skipping)
+    if (!previousRun || !shouldSkipStage(previousRun, "build", config, config.resumeFromStage)) {
+      setStage(runtime, "build", "running");
+      if (!envJson) throw new Error("envJson is required for build stage");
+      await runPlans(runtime, createBuildPlan(config, (envJson as any).build.python_executable, (envJson as any).environment));
+      setStage(runtime, "build", "succeeded");
+    } else {
+      skippedStages.push("build");
+      const stage = previousRun.stages.find((s) => s.id === "build");
+      if (stage) {
+        const stageIdx = runtime.run.stages.findIndex((s) => s.id === "build");
+        if (stageIdx !== -1) runtime.run.stages[stageIdx] = { ...stage };
+      }
+      log(runtime, "Skipping build (already succeeded)");
+    }
+
+    runtime.run.skippedStages = skippedStages;
     await finish(runtime, "succeeded");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -160,4 +280,39 @@ export function cancelPipeline(id: string): PipelineRun | undefined {
   runtime.run.status = "cancelled";
   emitStatus(runtime, true);
   return runtime.run;
+}
+
+export async function listPreviousRuns(): Promise<PipelineRun[]> {
+  try {
+    await fs.mkdir(runsDir, { recursive: true });
+    const files = await fs.readdir(runsDir);
+    const runFiles = files.filter((f) => f.endsWith(".json"));
+    const runs: PipelineRun[] = [];
+
+    for (const file of runFiles) {
+      try {
+        const data = await fs.readFile(path.join(runsDir, file), "utf-8");
+        const run = JSON.parse(data) as PipelineRun;
+        runs.push(run);
+      } catch (error) {
+        console.error(`Failed to parse run file ${file}:`, error);
+      }
+    }
+
+    // Sort by startedAt descending (newest first)
+    return runs.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+  } catch (error) {
+    console.error("Failed to list previous runs:", error);
+    return [];
+  }
+}
+
+export async function getPreviousRun(runId: string): Promise<PipelineRun | null> {
+  return loadRunState(runId);
+}
+
+export async function getSuccessfulStages(runId: string): Promise<string[]> {
+  const run = await loadRunState(runId);
+  if (!run) return [];
+  return run.stages.filter((s) => s.status === "succeeded").map((s) => s.id);
 }
