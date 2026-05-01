@@ -341,7 +341,7 @@ $archList = switch -Wildcard ($CudaVersion) {
 }
 
 $buildJobs = [math]::Max(1, [Environment]::ProcessorCount - 6)
-$maxJobs   = 8
+$maxJobs   = 6
 
 # Safer Array-based path cleaning (removes CUDA root from current path completely)
 $pathArray = ($env:PATH -split ';') | Where-Object { $_ -notmatch [regex]::Escape($CudaRoot) -and $_.Trim() -ne "" }
@@ -401,6 +401,7 @@ $cleanPathStr = $pathArray -join ';'
 `$env:USE_NUMPY                   = "1"
 `$env:USE_KINETO                  = "1"
 `$env:USE_TEST                    = "0"
+
 # Note: Flash attention can be tricky on Windows. Disable if compilation fails.
 `$env:USE_FLASH_ATTENTION         = "1" 
 
@@ -411,7 +412,6 @@ $cleanPathStr = $pathArray -join ';'
 # --- NVCC flags ---
 `$env:NVCC_APPEND_FLAGS           = "$nvccFlags"
 `$env:REL_WITH_DEB_INFO           = "0"
-`$env:EXTRA_CAFFE2_CMAKE_FLAGS    = "-DCMAKE_CXX_FLAGS_RELEASE=/Od"
 
 # --- Shared with other scripts ---
 `$script:CondaPython              = "$condaPython"

@@ -1,9 +1,11 @@
 # ============================================================
-# 2_build.ps1
-# Loads env vars written by 1_prepare.ps1, activates conda
-# env, then launches the build directly (no piping) so you
-# see live Ninja/CMake output in the terminal.
+# 2_build.ps1 (Modified with Skip-Test and Clean-Build)
 # ============================================================
+
+param(
+    [switch]$SkipTest = $false,
+    [switch]$Clean    = $false
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -30,7 +32,23 @@ Write-OK "Python               = $script:CondaPython"
 Write-OK "PyTorch source       = $script:PyTorchDir"
 
 # ------------------------------------------------------------
-# 1b. Load VS vcvarsall.bat environment (Required for MSVC)
+# 2. Cleanup (Optional)
+# ------------------------------------------------------------
+if ($Clean) {
+    Write-Step "Cleaning build artifacts..."
+    $pathsToClean = @("build", "dist", "build_python")
+    foreach ($p in $pathsToClean) {
+        $fullPath = Join-Path $script:PyTorchDir $p
+        if (Test-Path $fullPath) {
+            Write-Host "    Removing $fullPath" -ForegroundColor Gray
+            Remove-Item -Recurse -Force $fullPath
+        }
+    }
+    Write-OK "Clean completed"
+}
+
+# ------------------------------------------------------------
+# 3. Load VS vcvarsall.bat environment
 # ------------------------------------------------------------
 Write-Step "Sourcing vcvarsall.bat for x64"
 
@@ -62,55 +80,24 @@ Remove-Item $tempFile
 Write-OK "Visual Studio environment loaded"
 
 # ------------------------------------------------------------
-# 2. Activate conda env
+# Activate conda env
 # ------------------------------------------------------------
 Write-Step "Activating conda environment '$script:CondaEnv'"
 conda activate $script:CondaEnv
 Write-OK "Activated"
 
 # ------------------------------------------------------------
-# 3. Verify nvcc picks up the right cl.exe
+# Verify nvcc picks up the right cl.exe
 # ------------------------------------------------------------
 Write-Step "Verifying CUDA compiler"
 $nvccVer = & "$env:CUDA_HOME\bin\nvcc.exe" --version 2>&1 | Select-String "release"
 Write-OK "nvcc: $nvccVer"
 
 # ------------------------------------------------------------
-# Patch: disable /O2 -> /Od for sdp.cpp to avoid MSVC ICE
+# 5. Launch build
 # ------------------------------------------------------------
-Write-Step "Patching oneDNN sdp.cpp for MSVC ICE workaround"
-
-$sdpCpp = "$script:PyTorchDir\third_party\ideep\mkl-dnn\src\graph\backend\dnnl\patterns\sdp.cpp"
-$sdpFlag = "$script:PyTorchDir\third_party\ideep\mkl-dnn\src\graph\backend\dnnl\CMakeLists.txt"
-
-# Add compile flag override for just that file
-$flagsFile = "$script:PyTorchDir\cmake\ice_workaround.cmake"
-Set-Content -Path $flagsFile -Encoding UTF8 -Value @'
-# Workaround: MSVC ICE on sdp.cpp with /O2 optimization
-set_source_files_properties(
-    "${CMAKE_CURRENT_SOURCE_DIR}/patterns/sdp.cpp"
-    PROPERTIES COMPILE_FLAGS "/Od"
-)
-'@
-
-# Inject include into the affected CMakeLists.txt if not already there
-$cmakeContent = Get-Content $sdpFlag -Raw
-if ($cmakeContent -notmatch "ice_workaround") {
-    $cmakeContent = $cmakeContent -replace 
-        "(project\(dnnl.*?\))", 
-        "`$1`ninclude(`"$($script:PyTorchDir -replace '\\','/')/cmake/ice_workaround.cmake`")"
-    Set-Content -Path $sdpFlag -Value $cmakeContent -Encoding UTF8
-    Write-OK "Patched CMakeLists.txt with ICE workaround"
-} else {
-    Write-OK "ICE workaround already applied"
-}
-
-# ------------------------------------------------------------
-# 4. Launch build directly -- no pipe so output streams live
-# ------------------------------------------------------------
-Write-Step "Starting build (this will take 1-3 hours)"
-Write-Host "    Output is live -- you will see CMake then Ninja progress" -ForegroundColor Gray
-Write-Host ""
+Write-Step "Starting build"
+if ($SkipTest) { Write-Host "    [!] BUILD_TEST is DISABLED" -ForegroundColor Yellow }
 
 Push-Location $script:PyTorchDir
     $start = Get-Date
@@ -124,12 +111,16 @@ Push-Location $script:PyTorchDir
                       "-DCMAKE_CUDA_HOST_COMPILER=`"$cleanHostCxx`" " + `
                       "-DCAFFE2_USE_MSVC_STATIC_RUNTIME=OFF" 
 
+    if ($SkipTest) 
+    { 
+        $env:CMAKE_ARGS += " -DBUILD_TEST=OFF" 
+    }
+
     # Put the 2022 compiler folder at the VERY START of the PATH
     # This prevents Ninja from seeing VS 2025 at all.
     $msvc_bin = Split-Path $env:CUDAHOSTCXX
     $env:PATH = "$msvc_bin;" + $env:PATH
 
-    # Direct call -- stdout and stderr both go straight to terminal
     & $script:CondaPython setup.py bdist_wheel
 
     $exitCode = $LASTEXITCODE
@@ -137,13 +128,14 @@ Push-Location $script:PyTorchDir
 Pop-Location
 
 Write-Host ""
-if ($exitCode -ne 0) {
+if ($exitCode -ne 0) 
+{ 
     Write-Fail "Build FAILED after $elapsed min (exit code $exitCode)"
 }
 Write-OK "Build completed in $elapsed minutes"
 
 # ------------------------------------------------------------
-# 5. Show wheel location
+# 7. Show wheel location
 # ------------------------------------------------------------
 $wheel = Get-ChildItem "$script:PyTorchDir\dist\torch-*.whl" |
          Sort-Object LastWriteTime -Descending | Select-Object -First 1
