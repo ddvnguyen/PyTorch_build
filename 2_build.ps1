@@ -30,6 +30,38 @@ Write-OK "Python               = $script:CondaPython"
 Write-OK "PyTorch source       = $script:PyTorchDir"
 
 # ------------------------------------------------------------
+# 1b. Load VS vcvarsall.bat environment (Required for MSVC)
+# ------------------------------------------------------------
+Write-Step "Sourcing vcvarsall.bat for x64"
+
+# Typically located in a path like C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat
+# We use the parent directory of your CUDAHOSTCXX to find the VS root if not explicitly set
+if (-not (Test-Path $script:VcvarsPath)) {
+    Write-Fail "vcvarsall.bat not found at $script:VcvarsPath. Please verify your VS 2022 installation path."
+}
+
+# This trick runs the batch file and exports the resulting environment to a temp file
+$tempFile = [System.IO.Path]::GetTempFileName()
+cmd /c "`"$script:VcvarsPath`" x64 && set" > $tempFile
+
+# Parse the temp file and set variables in the current PowerShell session
+Get-Content $tempFile | Foreach-Object {
+    if ($_ -match "^(.*?)=(.*)$") {
+        $name = $matches[1]
+        $value = $matches[2]
+        if ($name -ieq "Path") {
+            # Special handling for Path to append/prepend rather than overwrite if desired, 
+            # but usually overwriting with the VS-defined path is what you want for the build.
+            $env:Path = $value
+        } else {
+            Set-Item "env:$name" $value
+        }
+    }
+}
+Remove-Item $tempFile
+Write-OK "Visual Studio environment loaded"
+
+# ------------------------------------------------------------
 # 2. Activate conda env
 # ------------------------------------------------------------
 Write-Step "Activating conda environment '$script:CondaEnv'"
@@ -83,12 +115,14 @@ Write-Host ""
 Push-Location $script:PyTorchDir
     $start = Get-Date
 
+    $cleanHostCxx = (Get-Item $env:CUDAHOSTCXX).FullName
+
     # Force CMake to use the VS 2022 compiler defined in your env_vars.ps1
     # This prevents Ninja from picking up VS 2025 (v18) by default.
-    $env:CMAKE_ARGS = "-DCMAKE_C_COMPILER=`"$env:CUDAHOSTCXX`" " + `
-                      "-DCMAKE_CXX_COMPILER=`"$env:CUDAHOSTCXX`" " + `
-                      "-DCMAKE_CUDA_HOST_COMPILER=`"$env:CUDAHOSTCXX`" " + `
-                      "-DCAFFE2_USE_MSVC_STATIC_RUNTIME=OFF"
+    $env:CMAKE_ARGS = "-DCMAKE_C_COMPILER=`"$cleanHostCxx`" " + `
+                      "-DCMAKE_CXX_COMPILER=`"$cleanHostCxx`" " + `
+                      "-DCMAKE_CUDA_HOST_COMPILER=`"$cleanHostCxx`" " + `
+                      "-DCAFFE2_USE_MSVC_STATIC_RUNTIME=OFF" 
 
     # Put the 2022 compiler folder at the VERY START of the PATH
     # This prevents Ninja from seeing VS 2025 at all.
