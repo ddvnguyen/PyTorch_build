@@ -1,3 +1,8 @@
 pytorch/
 pytorch/**
 .vscode/**
+src/env.json
+node_modules/
+dist/
+.pytorch-build-console/
+*.tsbuildinfo
