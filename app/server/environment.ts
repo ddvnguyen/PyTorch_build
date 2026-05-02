@@ -50,10 +50,14 @@ async function findVswhere(): Promise<string> {
   return path.join(programFilesX86, "Microsoft Visual Studio", "Installer", "vswhere.exe");
 }
 
-async function detectWindowsToolchain(): Promise<Record<string, string>> {
+export async function getAvailableToolchains(): Promise<Record<string, string>[]> {
+  if (!isWindows()) return [];
+  return await detectWindowsToolchains();
+}
   const vswhere = await findVswhere();
   const installRaw = await capture(vswhere, ["-all", "-products", "*", "-property", "installationPath"]);
   const installPaths = installRaw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const toolchains: Record<string, string>[] = [];
   for (const installPath of installPaths) {
     const vcvarsPath = path.join(installPath, "VC", "Auxiliary", "Build", "vcvarsall.bat");
     const msvcRoot = path.join(installPath, "VC", "Tools", "MSVC");
@@ -64,7 +68,7 @@ async function detectWindowsToolchain(): Promise<Record<string, string>> {
         const clPath = path.join(msvcRoot, version, "bin", "Hostx64", "x64", "cl.exe");
         try {
           await fs.access(clPath);
-          return { vcvars_path: vcvarsPath, msvc_version: version, cl_path: clPath };
+          toolchains.push({ vcvars_path: vcvarsPath, msvc_version: version, cl_path: clPath, install_path: installPath });
         } catch {
           // Try next toolset.
         }
@@ -73,11 +77,11 @@ async function detectWindowsToolchain(): Promise<Record<string, string>> {
       // Try next installation.
     }
   }
-  throw new Error("No usable MSVC x64 toolchain was found.");
+  return toolchains;
 }
 
 async function captureVcvars(toolchain: Record<string, string>): Promise<Record<string, string>> {
-  const command = `"${toolchain.vcvars_path}" x64 -vcvars_ver=${toolchain.msvc_version} && set`;
+  const command = `call "${toolchain.vcvars_path}" x64 -vcvars_ver=${toolchain.msvc_version} && set`;
   const raw = await capture("cmd.exe", ["/d", "/s", "/c", command]);
   const env: Record<string, string> = {};
   for (const line of raw.split(/\r?\n/)) {
@@ -97,7 +101,13 @@ export async function prepareEnvironment(config: BuildConfig): Promise<BuildEnvi
   const pathEntries = new Set<string>();
 
   if (isWindows()) {
-    toolchain = await detectWindowsToolchain();
+    if (config.selectedToolchain) {
+      toolchain = config.selectedToolchain;
+    } else {
+      const toolchains = await detectWindowsToolchains();
+      if (toolchains.length === 0) throw new Error("No usable MSVC x64 toolchain was found.");
+      toolchain = toolchains[0]; // Default to first if not selected
+    }
     const vcvars = await captureVcvars(toolchain);
     for (const key of ["LIB", "INCLUDE", "LIBPATH", "WindowsSdkDir", "WindowsSdkVerBinPath"]) {
       if (vcvars[key]) env[key] = vcvars[key];

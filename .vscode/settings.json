@@ -11,5 +11,6 @@
     "hide-files.files": [
         "pytorch",
         ".vscode"
-    ]
+    ],
+    "git.ignoreLimitWarning": true
 }

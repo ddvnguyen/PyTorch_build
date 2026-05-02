@@ -22,7 +22,14 @@ const stageTemplates: PipelineStage[] = [
   { id: "build", label: "Build wheel", status: "pending" }
 ];
 
-const runs = new Map<string, RuntimeRun>();
+export function getCurrentRun(): PipelineRun | null {
+  for (const runtime of runs.values()) {
+    if (runtime.run.status === "running") {
+      return runtime.run;
+    }
+  }
+  return null;
+}
 
 function cloneStages(): PipelineStage[] {
   return stageTemplates.map((stage) => ({ ...stage }));
@@ -125,6 +132,41 @@ function getStageIndex(stageId: string): number {
   return stageTemplates.findIndex((s) => s.id === stageId);
 }
 
+async function isGitRepoValid(config: BuildConfig): Promise<boolean> {
+  const repoGitPath = path.join(config.pytorchDir, ".git");
+  if (!existsSync(repoGitPath)) return false;
+
+  return new Promise<boolean>((resolve) => {
+    const child = spawn("git", ["rev-parse", "--is-inside-work-tree"], {
+      cwd: config.pytorchDir,
+      windowsHide: true,
+      stdio: ["ignore", "ignore", "ignore"]
+    });
+
+    child.on("error", () => resolve(false));
+    child.on("close", (code) => resolve(code === 0));
+  });
+}
+
+async function cleanupCheckoutFolder(config: BuildConfig): Promise<void> {
+  if (!existsSync(config.pytorchDir)) return;
+
+  const maxAttempts = 5;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await fs.rm(config.pytorchDir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (attempt === maxAttempts) throw error;
+      if (error && typeof error === "object" && "code" in error && (error as any).code === "EBUSY") {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
 function shouldSkipStage(previousRun: PipelineRun, stageId: string, config: BuildConfig, resumeFromStage?: string): boolean {
   // Don't skip if this is the resume point
   if (resumeFromStage && stageId === resumeFromStage) return false;
@@ -172,9 +214,25 @@ async function executePipeline(runtime: RuntimeRun, config: BuildConfig): Promis
     };
 
     // Checkout stage
+    if (previousRun && shouldSkipStage(previousRun, "checkout", config, config.resumeFromStage)) {
+      const validCheckout = await isGitRepoValid(config);
+      if (!validCheckout) {
+        log(runtime, "Existing checkout is invalid; cleaning folder and retrying from scratch.");
+        await cleanupCheckoutFolder(config);
+        previousRun = null;
+      }
+    }
+
     if (!previousRun || !shouldSkipStage(previousRun, "checkout", config, config.resumeFromStage)) {
       setStage(runtime, "checkout", "running");
-      await runPlans(runtime, createCheckoutPlan(config));
+      try {
+        await runPlans(runtime, createCheckoutPlan(config));
+      } catch (error) {
+        log(runtime, `Checkout failed: ${error instanceof Error ? error.message : String(error)}`);
+        await cleanupCheckoutFolder(config);
+        log(runtime, "Retrying checkout with a fresh clone.");
+        await runPlans(runtime, createCheckoutPlan(config, true));
+      }
       setStage(runtime, "checkout", "succeeded");
     } else {
       skippedStages.push("checkout");

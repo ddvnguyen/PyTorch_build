@@ -36,6 +36,7 @@ export interface BuildConfig {
   forceDependencies: boolean;
   resumeFromStage?: string;
   resumeFromRunId?: string;
+  selectedToolchain?: Record<string, string>;
 }
 
 export interface PipelineStage {

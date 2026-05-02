@@ -1,0 +1,363 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+.root{padding:1rem 0;font-size:14px;color:var(--color-text-primary)}
+h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+
+.selector-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1.5rem}
+.chip{padding:6px 14px;border-radius:20px;border:0.5px solid var(--color-border-secondary);font-size:13px;cursor:pointer;background:var(--color-background-primary);color:var(--color-text-secondary);transition:all .15s}
+.chip.active-cuda{background:#E6F1FB;border-color:#185FA5;color:#0C447C}
+.chip.active-rocm{background:#FAECE7;border-color:#993C1D;color:#712B13}
+.chip.active-cpu{background:#EAF3DE;border-color:#3B6D11;color:#27500A}
+
+.os-row{display:flex;gap:8px;margin-bottom:1.5rem}
+.os-btn{padding:5px 14px;border-radius:6px;border:0.5px solid var(--color-border-secondary);font-size:13px;cursor:pointer;background:var(--color-background-primary);color:var(--color-text-secondary);transition:all .15s}
+.os-btn.active{background:var(--color-background-secondary);border-color:var(--color-border-primary);color:var(--color-text-primary);font-weight:500}
+
+.phase{border:0.5px solid var(--color-border-tertiary);border-radius:12px;margin-bottom:10px;overflow:hidden}
+.phase-header{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;background:var(--color-background-secondary);user-select:none}
+.phase-num{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;flex-shrink:0}
+.phase-title{font-weight:500;font-size:14px;flex:1}
+.phase-badge{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:500}
+.phase-arrow{font-size:11px;color:var(--color-text-tertiary);transition:transform .2s}
+.phase.open .phase-arrow{transform:rotate(90deg)}
+.phase-body{display:none;padding:12px 14px;border-top:0.5px solid var(--color-border-tertiary)}
+.phase.open .phase-body{display:block}
+
+.step-list{list-style:none}
+.step-item{display:flex;gap:10px;padding:7px 0;border-bottom:0.5px solid var(--color-border-tertiary);font-size:13px;align-items:flex-start}
+.step-item:last-child{border-bottom:none}
+.step-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.step-info{flex:1}
+.step-label{font-weight:500;color:var(--color-text-primary);margin-bottom:2px}
+.step-cmd{font-family:var(--font-mono);font-size:11px;color:var(--color-text-secondary);background:var(--color-background-secondary);padding:3px 7px;border-radius:4px;display:inline-block;margin-top:3px;word-break:break-all}
+.step-note{font-size:11px;color:var(--color-text-tertiary);margin-top:3px}
+.step-tag{font-size:10px;padding:1px 6px;border-radius:8px;font-weight:500;margin-left:6px;vertical-align:middle}
+
+.tag-req{background:#FCEBEB;color:#A32D2D}
+.tag-opt{background:#FAEEDA;color:#633806}
+.tag-win{background:#E6F1FB;color:#0C447C}
+.tag-lin{background:#EAF3DE;color:#27500A}
+.tag-auto{background:#EEEDFE;color:#3C3489}
+
+.env-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+.env-table th{text-align:left;font-weight:500;font-size:11px;color:var(--color-text-secondary);padding:4px 6px;border-bottom:0.5px solid var(--color-border-tertiary)}
+.env-table td{padding:5px 6px;border-bottom:0.5px solid var(--color-border-tertiary);vertical-align:top}
+.env-table tr:last-child td{border-bottom:none}
+.env-val{font-family:var(--font-mono);font-size:11px;color:var(--color-text-primary)}
+.env-desc{color:var(--color-text-secondary)}
+
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:1rem;font-size:12px;color:var(--color-text-secondary)}
+.legend-item{display:flex;align-items:center;gap:5px}
+.legend-dot{width:8px;height:8px;border-radius:50%}
+
+.section-label{font-size:11px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px}
+</style>
+
+<div class="root">
+<h2 class="sr-only">PyTorch build environment preparation plan — CUDA, ROCm, and CPU-only paths for Linux and Windows</h2>
+
+<div style="margin-bottom:14px">
+  <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:8px">Accelerator backend</div>
+  <div class="selector-row" id="accel-row">
+    <button class="chip active-cuda" onclick="setAccel('cuda',this)">NVIDIA CUDA</button>
+    <button class="chip" onclick="setAccel('rocm',this)">AMD ROCm</button>
+    <button class="chip" onclick="setAccel('cpu',this)">CPU-only</button>
+  </div>
+  <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:8px">Operating system</div>
+  <div class="os-row">
+    <button class="os-btn active" onclick="setOS('linux',this)">Linux</button>
+    <button class="os-btn" onclick="setOS('windows',this)">Windows</button>
+  </div>
+</div>
+
+<div class="legend">
+  <span class="legend-item"><span class="legend-dot" style="background:#E24B4A"></span>Required</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#EF9F27"></span>Optional</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#7F77DD"></span>Auto-detected</span>
+</div>
+
+<div id="phases"></div>
+</div>
+
+<script>
+var accel='cuda', os='linux';
+
+var data={
+cuda:{
+  linux:[
+    {title:"Prerequisites check",badge:"System scan",color:"#378ADD",steps:[
+      {label:"NVIDIA driver",cmd:"nvidia-smi",note:"Minimum: driver ≥ 525 for CUDA 12.x",req:"req"},
+      {label:"CUDA toolkit",cmd:"nvcc --version",note:"Match PyTorch's CUDA requirement (e.g. 12.1, 12.4, 12.8)",req:"req"},
+      {label:"Nsight Compute / NVTX",cmd:"ls /usr/local/cuda/extras/CUPTI",note:"Part of CUDA installer — needed for profiling support",req:"req"},
+      {label:"cuDNN",cmd:"cat /usr/local/cuda/include/cudnn_version.h | grep CUDNN_MAJOR",note:"Install matching cuDNN for your CUDA version",req:"req"},
+      {label:"GCC / G++",cmd:"gcc --version",note:"GCC 9–12 recommended; GCC 13+ may have issues",req:"req"},
+      {label:"CMake ≥ 3.26",cmd:"cmake --version",note:"Avoid cmake 3.30+ from conda-forge (known ninja breakage)",req:"req"},
+      {label:"Ninja",cmd:"ninja --version",note:"Faster than Make; PyTorch CI defaults to Ninja",req:"req"},
+      {label:"Python 3.9–3.12",cmd:"python --version",req:"req"},
+      {label:"Git with LFS",cmd:"git --version",req:"req"},
+      {label:"ccache (build cache)",cmd:"ccache --version",note:"Dramatically speeds up rebuilds",req:"opt"},
+    ]},
+    {title:"Python environment",badge:"Isolation",color:"#1D9E75",steps:[
+      {label:"Create conda env",cmd:"conda create -y -n pytorch-build python=3.11",req:"req"},
+      {label:"Activate env",cmd:"conda activate pytorch-build",req:"req"},
+      {label:"Install MKL (x86 only)",cmd:"pip install mkl-static mkl-include",note:"Intel Math Kernel Library — accelerates CPU ops",req:"opt"},
+      {label:"Install Magma (CUDA LAPACK)",cmd:".ci/docker/common/install_magma_conda.sh 12.4",note:"Run from PyTorch dir after clone; specify your CUDA version",req:"opt"},
+      {label:"Set CMAKE_PREFIX_PATH",cmd:'export CMAKE_PREFIX_PATH="${CONDA_PREFIX:-$(dirname $(which conda))/../}"',req:"req"},
+    ]},
+    {title:"Environment variables",badge:"Build config",color:"#7F77DD",steps:[
+      {label:"Enable CUDA",cmd:"export USE_CUDA=1",note:"Default if CUDA found; set 0 to force CPU",req:"auto"},
+      {label:"Disable ROCm",cmd:"export USE_ROCM=0",req:"opt"},
+      {label:"CUDA home path",cmd:"export CUDA_HOME=/usr/local/cuda",note:"Only if installed in non-standard location",req:"opt"},
+      {label:"Parallelism",cmd:"export MAX_JOBS=8",note:"Set to physical core count; too high causes OOM",req:"req"},
+      {label:"Optional: Triton",cmd:"export USE_TRITON=1",note:"Required for torch.compile + inductor backend",req:"opt"},
+      {label:"Optional: NCCL",cmd:"export USE_NCCL=1",note:"For distributed training",req:"opt"},
+      {label:"CUDA arch list",cmd:'export TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6;9.0"',note:"Only the arches you need — each adds significant compile time",req:"opt"},
+    ]},
+    {title:"Clone + submodules",badge:"Source",color:"#5F5E5A",steps:[
+      {label:"Clone PyTorch",cmd:"git clone --recursive https://github.com/pytorch/pytorch.git",req:"req"},
+      {label:"Sync submodules",cmd:"git submodule sync --recursive",req:"req"},
+      {label:"Init submodules",cmd:"git submodule update --init --recursive",req:"req"},
+      {label:"Install Python deps",cmd:"pip install -r requirements.txt",req:"req"},
+      {label:"Install build deps",cmd:"pip install cmake ninja",req:"req"},
+    ]},
+    {title:"Build",badge:"Compile",color:"#639922",steps:[
+      {label:"Develop mode (fastest iteration)",cmd:"python setup.py develop",note:"Edits to Python files take effect immediately",req:"req"},
+      {label:"Wheel build (for distribution)",cmd:"python setup.py bdist_wheel",req:"opt"},
+      {label:"Alternative (pip editable)",cmd:"pip install -e .",req:"opt"},
+    ]},
+    {title:"Validation",badge:"Smoke test",color:"#D85A30",steps:[
+      {label:"Import + version check",cmd:'python -c "import torch; print(torch.__version__)"',req:"req"},
+      {label:"CUDA availability",cmd:'python -c "import torch; print(torch.cuda.is_available())"',req:"req"},
+      {label:"CUDA device name",cmd:'python -c "import torch; print(torch.cuda.get_device_name(0))"',req:"req"},
+      {label:"Full env report",cmd:'python -c "import torch; print(torch.__config__.show())"',req:"opt"},
+    ]},
+  ],
+  windows:[
+    {title:"Prerequisites check",badge:"System scan",color:"#378ADD",steps:[
+      {label:"NVIDIA driver + CUDA toolkit",cmd:"nvcc --version  &&  nvidia-smi",note:"Install CUDA toolkit from developer.nvidia.com; choose version matching PyTorch",req:"req"},
+      {label:"NVTX (Nsight Compute)",cmd:"ls 'C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA'",note:"Reinstall CUDA and check 'Nsight Compute' checkbox if missing",req:"req"},
+      {label:"Visual Studio / MSVC 2019 or 2022",cmd:"cl.exe",note:"PyTorch CI uses Visual C++ BuildTools — install from visualstudio.microsoft.com/visual-cpp-build-tools",req:"req"},
+      {label:"CMake ≥ 3.26",cmd:"cmake --version",note:"Do NOT use cmake from conda-forge (3.30+ breaks Ninja)",req:"req"},
+      {label:"Ninja",cmd:"ninja --version",req:"req"},
+      {label:"Python 3.9–3.12",cmd:"python --version",req:"req"},
+      {label:"Git",cmd:"git --version",note:"Enable long path support: git config --system core.longpaths true",req:"req"},
+      {label:"Sccache (build cache)",cmd:"sccache --version",note:"Windows equivalent of ccache",req:"opt"},
+    ]},
+    {title:"MSVC environment activation",badge:"Critical step",color:"#D85A30",steps:[
+      {label:"Load vcvarsall (x64)",cmd:'call "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat" x64',note:"Run ALL build commands from this shell — or use Developer PowerShell for VS",req:"req"},
+      {label:"Verify compiler",cmd:"cl.exe /?",note:"Must show 'Microsoft (R) C/C++ Optimizing Compiler'",req:"req"},
+    ]},
+    {title:"Python environment",badge:"Isolation",color:"#1D9E75",steps:[
+      {label:"Create conda env",cmd:"conda create -y -n pytorch-build python=3.11",req:"req"},
+      {label:"Activate env",cmd:"conda activate pytorch-build",req:"req"},
+      {label:"Install MKL",cmd:"pip install mkl-static mkl-include",req:"opt"},
+      {label:"Install libuv (distributed)",cmd:"conda install -c conda-forge libuv=1.51",note:"Needed if building with torch.distributed on Windows",req:"opt"},
+      {label:"Set CMAKE_PREFIX_PATH (PowerShell)",cmd:'$env:CMAKE_PREFIX_PATH="$env:CONDA_PREFIX"',req:"req"},
+    ]},
+    {title:"Environment variables",badge:"Build config",color:"#7F77DD",steps:[
+      {label:"Enable CUDA (PowerShell)",cmd:"$env:USE_CUDA=1",req:"auto"},
+      {label:"CUDA path",cmd:'$env:CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4"',note:"Both CUDA_PATH and CUDA_HOME must point to your CUDA install",req:"req"},
+      {label:"CUDA home (duplicate)",cmd:'$env:CUDA_HOME=$env:CUDA_PATH',req:"req"},
+      {label:"Parallelism",cmd:"$env:MAX_JOBS=8",req:"req"},
+      {label:"Long path workaround",cmd:"$env:PYTHONUTF8=1",note:"Helps with Windows path length limits during build",req:"opt"},
+      {label:"CUDA arch list",cmd:'$env:TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0"',req:"opt"},
+    ]},
+    {title:"Clone + submodules",badge:"Source",color:"#5F5E5A",steps:[
+      {label:"Clone PyTorch",cmd:"git clone --recursive https://github.com/pytorch/pytorch.git",req:"req"},
+      {label:"Enable long paths (Windows)",cmd:"git config --system core.longpaths true",note:"Run once; prevents path-too-long build failures",req:"req"},
+      {label:"Sync + init submodules",cmd:"git submodule sync --recursive && git submodule update --init --recursive",req:"req"},
+      {label:"Install Python deps",cmd:"pip install -r requirements.txt",req:"req"},
+    ]},
+    {title:"Build",badge:"Compile",color:"#639922",steps:[
+      {label:"Build (from Developer PowerShell / vcvarsall shell)",cmd:"python setup.py develop",note:"Ninja auto-selected when found in PATH; latest MSVC used as toolchain",req:"req"},
+      {label:"Wheel build",cmd:"python setup.py bdist_wheel",req:"opt"},
+    ]},
+    {title:"Validation",badge:"Smoke test",color:"#D85A30",steps:[
+      {label:"Version check",cmd:'python -c "import torch; print(torch.__version__)"',req:"req"},
+      {label:"CUDA check",cmd:'python -c "import torch; print(torch.cuda.is_available())"',req:"req"},
+      {label:"Device name",cmd:'python -c "import torch; print(torch.cuda.get_device_name(0))"',req:"req"},
+    ]},
+  ]
+},
+rocm:{
+  linux:[
+    {title:"Prerequisites check",badge:"System scan",color:"#378ADD",steps:[
+      {label:"ROCm system install",cmd:"rocminfo",note:"Install via amdgpu-install or AMDGPU installer from rocm.docs.amd.com/en/latest",req:"req"},
+      {label:"HIP runtime",cmd:"hipcc --version",req:"req"},
+      {label:"Detect GPU architecture",cmd:"rocminfo | grep gfx",note:"Note your gfx ID (e.g. gfx1100) — needed for PYTORCH_ROCM_ARCH",req:"req"},
+      {label:"amdgpu driver",cmd:"dkms status",note:"Kernel module must be loaded",req:"req"},
+      {label:"GCC 10+ (system)",cmd:"gcc --version",note:"PyTorch ROCm builds use GCC from system, NOT conda-forge GCC",req:"req"},
+      {label:"CMake ≈ 3.26",cmd:"cmake --version",note:"conda-forge cmake 3.30+ known to break Ninja on ROCm builds",req:"req"},
+      {label:"Ninja",cmd:"ninja --version",req:"req"},
+      {label:"Python 3.9–3.12",cmd:"python --version",req:"req"},
+    ]},
+    {title:"Python environment",badge:"Isolation",color:"#1D9E75",steps:[
+      {label:"Create conda env",cmd:"conda create -y -n pytorch-rocm python=3.11",req:"req"},
+      {label:"Activate env",cmd:"conda activate pytorch-rocm",req:"req"},
+      {label:"Install cmake from default channel",cmd:"conda install -c defaults cmake=3.26",note:"Do NOT use conda-forge — it installs 3.30+ which breaks build",req:"req"},
+      {label:"Disable FBGEMM (clang compat)",cmd:"export USE_FBGEMM=0",note:"Clang (used by ROCm) incompatible with FBGEMM",req:"req"},
+    ]},
+    {title:"Environment variables",badge:"Build config",color:"#7F77DD",steps:[
+      {label:"Enable ROCm",cmd:"export USE_ROCM=1",req:"req"},
+      {label:"Disable CUDA",cmd:"export USE_CUDA=0",req:"req"},
+      {label:"ROCm path (if non-default)",cmd:"export ROCM_PATH=/opt/rocm",note:"Default: /opt/rocm — only set if different",req:"auto"},
+      {label:"GPU architecture",cmd:'export PYTORCH_ROCM_ARCH="gfx1100"',note:"From rocminfo | grep gfx — semicolons for multiple: gfx906;gfx908",req:"req"},
+      {label:"Parallelism",cmd:"export MAX_JOBS=8",req:"req"},
+      {label:"OpenMP (ROCm LLVM)",cmd:"export OPENMP_LIBRARIES=/opt/rocm/llvm/lib",note:"ROCm ships its own LLVM/Clang — set OpenMP path explicitly",req:"opt"},
+      {label:"Disable FBGEMM",cmd:"export USE_FBGEMM=0",req:"req"},
+    ]},
+    {title:"HIP source conversion",badge:"ROCm specific",color:"#D85A30",steps:[
+      {label:"Convert CUDA→HIP (auto)",cmd:".ci/pytorch/build.sh",note:"PyTorch CI script runs hipify automatically — or run: python tools/amd_build/build_amd.py",req:"auto"},
+    ]},
+    {title:"Clone + submodules",badge:"Source",color:"#5F5E5A",steps:[
+      {label:"Clone PyTorch",cmd:"git clone --recursive https://github.com/pytorch/pytorch.git",req:"req"},
+      {label:"Sync + init submodules",cmd:"git submodule sync --recursive && git submodule update --init --recursive",req:"req"},
+      {label:"Install Python deps",cmd:"pip install -r requirements.txt",req:"req"},
+    ]},
+    {title:"Build",badge:"Compile",color:"#639922",steps:[
+      {label:"Build via CI script (recommended)",cmd:".ci/pytorch/build.sh",note:"Runs hipify + cmake + ninja in the correct order",req:"req"},
+      {label:"Or manual develop mode",cmd:"python setup.py develop",req:"opt"},
+    ]},
+    {title:"Validation",badge:"Smoke test",color:"#D85A30",steps:[
+      {label:"Version + ROCm check",cmd:'python -c "import torch; print(torch.__version__, torch.version.hip)"',req:"req"},
+      {label:"GPU available (torch.cuda = HIP alias)",cmd:'python -c "import torch; print(torch.cuda.is_available())"',note:"ROCm uses CUDA-compatible API — torch.cuda.is_available() returns True for AMD GPUs",req:"req"},
+      {label:"Run nn tests",cmd:"PYTORCH_TEST_WITH_ROCM=1 python test/test_nn.py --verbose",req:"opt"},
+    ]},
+  ],
+  windows:[
+    {title:"ROCm Windows status",badge:"Limited support",color:"#D85A30",steps:[
+      {label:"ROCm Windows (HIP SDK)",cmd:"winget install AMD.ROCm",note:"AMD is actively expanding Windows ROCm — install via repo.radeon.com wheels for PyTorch 2.9+",req:"req"},
+      {label:"Prebuilt wheels (recommended path)",cmd:"pip install --no-cache-dir https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torch-2.9.1+rocm7.2.1-cp312-cp312-win_amd64.whl",note:"Building ROCm PyTorch from source on Windows requires 96+ core machines; prebuilt wheels are the practical option",req:"opt"},
+    ]},
+    {title:"Driver requirement",badge:"System",color:"#378ADD",steps:[
+      {label:"AMD Adrenalin driver ≥ 26.2.2",cmd:"Check Device Manager > Display Adapters",note:"Required for ROCm 7.2.1 Windows wheels",req:"req"},
+      {label:"Verify GPU detection",cmd:'python -c "import torch; print(torch.cuda.get_device_name(0))"',note:"Should print your Radeon GPU name",req:"req"},
+    ]},
+    {title:"Validation",badge:"Smoke test",color:"#D85A30",steps:[
+      {label:"ROCm availability",cmd:'python -c "import torch; print(torch.version.hip)"',req:"req"},
+      {label:"GPU device count",cmd:'python -c "import torch; print(torch.cuda.device_count())"',req:"req"},
+    ]},
+  ]
+},
+cpu:{
+  linux:[
+    {title:"Prerequisites check",badge:"System scan",color:"#378ADD",steps:[
+      {label:"GCC / G++",cmd:"gcc --version",note:"GCC 9–12 recommended",req:"req"},
+      {label:"CMake ≥ 3.26",cmd:"cmake --version",req:"req"},
+      {label:"Ninja",cmd:"ninja --version",req:"req"},
+      {label:"Python 3.9–3.12",cmd:"python --version",req:"req"},
+      {label:"Git",cmd:"git --version",req:"req"},
+    ]},
+    {title:"Python environment",badge:"Isolation",color:"#1D9E75",steps:[
+      {label:"Create conda env",cmd:"conda create -y -n pytorch-cpu python=3.11",req:"req"},
+      {label:"Activate env",cmd:"conda activate pytorch-cpu",req:"req"},
+      {label:"Install MKL",cmd:"pip install mkl-static mkl-include",note:"Intel MKL for CPU math acceleration",req:"opt"},
+    ]},
+    {title:"Environment variables",badge:"Build config",color:"#7F77DD",steps:[
+      {label:"Disable CUDA",cmd:"export USE_CUDA=0",req:"req"},
+      {label:"Disable ROCm",cmd:"export USE_ROCM=0",req:"req"},
+      {label:"Parallelism",cmd:"export MAX_JOBS=8",req:"req"},
+    ]},
+    {title:"Clone + submodules",badge:"Source",color:"#5F5E5A",steps:[
+      {label:"Clone PyTorch",cmd:"git clone --recursive https://github.com/pytorch/pytorch.git",req:"req"},
+      {label:"Sync + init submodules",cmd:"git submodule sync --recursive && git submodule update --init --recursive",req:"req"},
+      {label:"Install Python deps",cmd:"pip install -r requirements.txt",req:"req"},
+    ]},
+    {title:"Build",badge:"Compile",color:"#639922",steps:[
+      {label:"CPU-only develop build",cmd:"python setup.py develop",req:"req"},
+    ]},
+    {title:"Validation",badge:"Smoke test",color:"#D85A30",steps:[
+      {label:"Version check",cmd:'python -c "import torch; print(torch.__version__)"',req:"req"},
+      {label:"Confirm no CUDA",cmd:'python -c "import torch; print(torch.cuda.is_available())"',note:"Should print False",req:"req"},
+    ]},
+  ],
+  windows:[
+    {title:"Prerequisites check",badge:"System scan",color:"#378ADD",steps:[
+      {label:"Visual Studio / MSVC 2019 or 2022",cmd:"cl.exe",note:"Install Visual C++ Build Tools from visualstudio.microsoft.com",req:"req"},
+      {label:"CMake ≥ 3.26",cmd:"cmake --version",req:"req"},
+      {label:"Ninja",cmd:"ninja --version",req:"req"},
+      {label:"Python 3.9–3.12",cmd:"python --version",req:"req"},
+      {label:"Git (long paths)",cmd:"git config --system core.longpaths true",req:"req"},
+    ]},
+    {title:"MSVC environment activation",badge:"Critical step",color:"#D85A30",steps:[
+      {label:"Load vcvarsall (x64)",cmd:'call "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat" x64',req:"req"},
+    ]},
+    {title:"Python environment",badge:"Isolation",color:"#1D9E75",steps:[
+      {label:"Create and activate conda env",cmd:"conda create -y -n pytorch-cpu python=3.11 && conda activate pytorch-cpu",req:"req"},
+      {label:"Install MKL",cmd:"pip install mkl-static mkl-include",req:"opt"},
+    ]},
+    {title:"Environment variables",badge:"Build config",color:"#7F77DD",steps:[
+      {label:"Disable CUDA",cmd:"$env:USE_CUDA=0",req:"req"},
+      {label:"Disable ROCm",cmd:"$env:USE_ROCM=0",req:"req"},
+      {label:"Parallelism",cmd:"$env:MAX_JOBS=8",req:"req"},
+    ]},
+    {title:"Clone + submodules",badge:"Source",color:"#5F5E5A",steps:[
+      {label:"Clone PyTorch",cmd:"git clone --recursive https://github.com/pytorch/pytorch.git",req:"req"},
+      {label:"Init submodules",cmd:"git submodule sync --recursive && git submodule update --init --recursive",req:"req"},
+      {label:"Install Python deps",cmd:"pip install -r requirements.txt",req:"req"},
+    ]},
+    {title:"Build",badge:"Compile",color:"#639922",steps:[
+      {label:"CPU-only build",cmd:"python setup.py develop",req:"req"},
+    ]},
+    {title:"Validation",badge:"Smoke test",color:"#D85A30",steps:[
+      {label:"Version + confirm no GPU",cmd:'python -c "import torch; print(torch.__version__, torch.cuda.is_available())"',req:"req"},
+    ]},
+  ]
+}
+};
+
+function dotColor(req){return req==='req'?'#E24B4A':req==='opt'?'#EF9F27':'#7F77DD'}
+function tagLabel(req){return req==='req'?'required':req==='opt'?'optional':'auto-detect'}
+function tagClass(req){return req==='req'?'tag-req':req==='opt'?'tag-opt':'tag-auto'}
+
+function render(){
+  var phases=data[accel][os];
+  var html='';
+  phases.forEach(function(p,i){
+    var phaseId='phase-'+i;
+    html+='<div class="phase" id="'+phaseId+'">';
+    html+='<div class="phase-header" onclick="toggle(\''+phaseId+'\')">';
+    html+='<div class="phase-num" style="background:'+p.color+'22;color:'+p.color+'">'+(i+1)+'</div>';
+    html+='<span class="phase-title">'+p.title+'</span>';
+    html+='<span class="phase-badge" style="background:'+p.color+'18;color:'+p.color+'">'+p.badge+'</span>';
+    html+='<span class="phase-arrow">&#9654;</span></div>';
+    html+='<div class="phase-body"><ul class="step-list">';
+    p.steps.forEach(function(s){
+      html+='<li class="step-item">';
+      html+='<span class="step-dot" style="background:'+dotColor(s.req)+'"></span>';
+      html+='<div class="step-info"><div class="step-label">'+s.label;
+      html+='<span class="step-tag '+tagClass(s.req)+'">'+tagLabel(s.req)+'</span></div>';
+      if(s.cmd) html+='<div><code class="step-cmd">'+s.cmd+'</code></div>';
+      if(s.note) html+='<div class="step-note">'+s.note+'</div>';
+      html+='</div></li>';
+    });
+    html+='</ul></div></div>';
+  });
+  document.getElementById('phases').innerHTML=html;
+  document.getElementById('phase-0').classList.add('open');
+}
+
+function toggle(id){
+  var el=document.getElementById(id);
+  el.classList.toggle('open');
+}
+
+function setAccel(a,btn){
+  accel=a;
+  document.querySelectorAll('#accel-row .chip').forEach(function(b){
+    b.className='chip';
+  });
+  btn.className='chip active-'+a;
+  render();
+}
+
+function setOS(o,btn){
+  os=o;
+  document.querySelectorAll('.os-btn').forEach(function(b){b.classList.remove('active')});
+  btn.classList.add('active');
+  render();
+}
+
+render();
+</script>

@@ -43,6 +43,9 @@ $env:USE_GLOO                    = "1"
 $env:USE_NUMPY                   = "1"
 $env:USE_KINETO                  = "1"
 $env:USE_TEST                    = "0"
+$env:BUILD_TEST                  = "0"
+$env:INSTALL_TEST                = "0"
+$env:USE_NNPACK                  = "0"
 
 # --- Parallelism & Flags ---
 $env:CMAKE_BUILD_PARALLEL_LEVEL  = "14"

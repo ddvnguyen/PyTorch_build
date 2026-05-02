@@ -4,9 +4,9 @@ import type { BuildConfig, CommandPlan } from "./types.js";
 
 const repoUrl = "https://github.com/pytorch/pytorch.git";
 
-export function createCheckoutPlan(config: BuildConfig): CommandPlan[] {
+export function createCheckoutPlan(config: BuildConfig, forceClone = false): CommandPlan[] {
   const hasCheckout = fs.existsSync(path.join(config.pytorchDir, ".git"));
-  if (!hasCheckout) {
+  if (!hasCheckout || forceClone) {
     return [
       {
         label: "Clone PyTorch source",
@@ -36,15 +36,15 @@ export function createCheckoutPlan(config: BuildConfig): CommandPlan[] {
 
   return [
     {
-      label: "Clean up conflicting tags",
+      label: "Prune remote refs",
       command: "git",
-      args: ["fetch", "--prune", "origin", "refs/tags/*:refs/tags/*"],
+      args: ["remote", "prune", "origin"],
       cwd: config.pytorchDir
     },
     {
-      label: "Fetch PyTorch source",
+      label: "Fetch PyTorch source and tags",
       command: "git",
-      args: ["fetch", "--tags", "--force", "origin"],
+      args: ["fetch", "--prune", "--tags", "--force", "origin"],
       cwd: config.pytorchDir
     },
     {
