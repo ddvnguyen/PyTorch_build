@@ -28,6 +28,12 @@ test("dependency plan uses spawned command and argument arrays", () => {
 
   assert.ok(plans.length >= 2);
   assert.equal(plans[0].command, "conda");
-  assert.deepEqual(plans[0].args.slice(0, 4), ["run", "--no-capture-output", "-n", "pytorch-build"]);
+  assert.deepEqual(plans[0].args.slice(0, 4), ["install", "-y", "-n", "pytorch-build"]);
   assert.ok(plans.some((plan) => plan.args.includes(path.join(config.pytorchDir, "requirements.txt"))));
+});
+
+test("dependency plan uses saved conda executable when available", () => {
+  const plans = createDependencyPlan({ ...config, condaExecutable: path.join("C:\\Users\\demo", "miniconda3", "Scripts", "conda.exe") });
+
+  assert.equal(plans[0].command, path.join("C:\\Users\\demo", "miniconda3", "Scripts", "conda.exe"));
 });

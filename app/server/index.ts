@@ -5,7 +5,7 @@ import { clientDistPath, isBuiltServer, repoRoot } from "./paths.js";
 import { loadBuildOptions, loadVersions } from "./github.js";
 import { loadConfig, saveConfig } from "./config.js";
 import { cancelPipeline, getPipeline, getRuntime, startPipeline, listPreviousRuns, getPreviousRun, getSuccessfulStages, getCurrentRun } from "./pipeline.js";
-import { getAvailableToolchains } from "./environment.js";
+import { detectEnvironment, getAvailableToolchains, prepareEnvironmentWithStatus } from "./environment.js";
 import type { BuildConfig } from "./types.js";
 
 const port = Number(process.env.PORT || 4173);
@@ -50,6 +50,25 @@ app.get("/api/config", async (_request, response, next) => {
     response.json(config);
   } catch (error) {
     console.error("[SERVER] Error loading config:", error);
+    next(error);
+  }
+});
+
+app.get("/api/environment/status", async (_request, response, next) => {
+  try {
+    const config = await loadConfig();
+    response.json(await detectEnvironment(config));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/environment/prepare", async (_request, response, next) => {
+  try {
+    const config = await loadConfig();
+    const result = await prepareEnvironmentWithStatus(config);
+    response.json(result);
+  } catch (error) {
     next(error);
   }
 });

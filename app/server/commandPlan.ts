@@ -4,6 +4,10 @@ import type { BuildConfig, CommandPlan } from "./types.js";
 
 const repoUrl = "https://github.com/pytorch/pytorch.git";
 
+function condaCommand(config: BuildConfig): string {
+  return config.condaExecutable || "conda";
+}
+
 export function createCheckoutPlan(config: BuildConfig, forceClone = false): CommandPlan[] {
   const hasCheckout = fs.existsSync(path.join(config.pytorchDir, ".git"));
   if (!hasCheckout || forceClone) {
@@ -69,26 +73,24 @@ export function createCheckoutPlan(config: BuildConfig, forceClone = false): Com
 }
 
 export function createDependencyPlan(config: BuildConfig): CommandPlan[] {
+  const conda = condaCommand(config);
   const plans: CommandPlan[] = [
     {
       label: "Install cmake and ninja",
-      command: "conda",
-      args: ["run", "--no-capture-output", "-n", config.condaEnv, "conda", "install", "-y", "cmake", "ninja"]
+      command: conda,
+      args: ["install", "-y", "-n", config.condaEnv, "cmake", "ninja"]
     }
   ];
 
   if (process.platform === "win32") {
     plans.push({
       label: "Install Windows libuv",
-      command: "conda",
+      command: conda,
       args: [
-        "run",
-        "--no-capture-output",
-        "-n",
-        config.condaEnv,
-        "conda",
         "install",
         "-y",
+        "-n",
+        config.condaEnv,
         "-c",
         "conda-forge",
         "libuv=1.51"
@@ -99,7 +101,7 @@ export function createDependencyPlan(config: BuildConfig): CommandPlan[] {
   plans.push(
     {
       label: "Install Python build packages",
-      command: "conda",
+      command: conda,
       args: [
         "run",
         "--no-capture-output",
@@ -116,7 +118,7 @@ export function createDependencyPlan(config: BuildConfig): CommandPlan[] {
     },
     {
       label: "Install PyTorch requirements",
-      command: "conda",
+      command: conda,
       args: [
         "run",
         "--no-capture-output",

@@ -12,7 +12,7 @@ import {
   TerminalSquare
 } from "lucide-react";
 import { api } from "./api";
-import type { BuildConfig, BuildOption, PipelineRun, VersionOption } from "./types";
+import type { BuildConfig, BuildOption, EnvironmentStatus, PipelineRun, VersionOption } from "./types";
 
 const cudaVersions = ["13.0", "12.9", "12.8", "12.6", "12.4", "11.8", "cpu"];
 const gpuArchitectures = [
@@ -53,15 +53,25 @@ export function App() {
   const [config, setConfig] = useState<BuildConfig | null>(null);
   const [versions, setVersions] = useState<VersionOption[]>([]);
   const [options, setOptions] = useState<BuildOption[]>([]);
+  const [environmentStatus, setEnvironmentStatus] = useState<EnvironmentStatus | null>(null);
   const [run, setRun] = useState<PipelineRun>(defaultRun);
   const [logs, setLogs] = useState<string[]>(["Ready"]);
   const [error, setError] = useState<string>("");
+
+  async function refreshEnvironmentStatus() {
+    try {
+      setEnvironmentStatus(await api.environmentStatus());
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   useEffect(() => {
     void Promise.all([api.config(), api.versions()])
       .then(([loadedConfig, versionResponse]) => {
         setConfig(loadedConfig);
         setVersions([...versionResponse.releases, ...versionResponse.tags]);
+        void refreshEnvironmentStatus();
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
   }, []);
@@ -123,8 +133,22 @@ export function App() {
     try {
       const saved = await api.saveConfig(config);
       setConfig(saved);
+      await refreshEnvironmentStatus();
       const nextRun = await api.startPipeline(saved);
       setRun(nextRun);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function prepareEnvironment() {
+    if (!config) return;
+    setError("");
+    try {
+      const saved = await api.saveConfig(config);
+      setConfig(saved);
+      const result = await api.prepareEnvironment();
+      setEnvironmentStatus(result.status);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -248,6 +272,48 @@ export function App() {
           <span>cuDNN root</span>
           <input value={config.cudnnRoot} onChange={(event) => setConfig(field(config, "cudnnRoot", event.target.value))} />
         </label>
+
+        <section className="env-card compact">
+          <div className="section-title">
+            <CheckCircle2 size={18} />
+            <h3>Environment</h3>
+          </div>
+          <p className={`env-summary ${environmentStatus?.ready ? "ready" : "not-ready"}`}>
+            {environmentStatus?.ready ? "Ready for build" : "Needs attention"}
+          </p>
+          {environmentStatus?.conda ? (
+            <div className="env-tool-row conda-row">
+              <span>conda</span>
+              <strong>
+                {environmentStatus.conda.present ? "available" : "missing"}
+                {environmentStatus.conda.bootstrapInstalled ? " (bootstrap)" : ""}
+              </strong>
+            </div>
+          ) : null}
+          <div className="env-tool-list">
+            {environmentStatus ? (
+              Object.entries(environmentStatus.tools)
+                .slice(0, 6)
+                .map(([name, tool]) => (
+                  <div key={name} className="env-tool-row">
+                    <span>{name}</span>
+                    <strong>{tool.version || (tool.found ? "installed" : "missing")}</strong>
+                  </div>
+                ))
+            ) : (
+              <p>Load environment status to review prerequisites.</p>
+            )}
+          </div>
+          {environmentStatus?.issues?.length ? (
+            <div className="env-issues">
+              {environmentStatus.issues.slice(0, 4).map((issue) => (
+                <p key={`${issue.tool}-${issue.message}`} className={`issue ${issue.severity}`}>
+                  {issue.message}
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </section>
       </aside>
 
       <section className="workflow-panel">
@@ -257,6 +323,9 @@ export function App() {
             <h2>Prepare, install dependencies, build wheel</h2>
           </div>
           <div className="actions">
+            <button className="secondary" onClick={prepareEnvironment}>
+              <Database size={16} /> Prepare environment
+            </button>
             <button className="secondary" onClick={cancelPipeline} disabled={run.status !== "running"}>
               <Square size={16} /> Cancel
             </button>

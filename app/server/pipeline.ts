@@ -22,6 +22,8 @@ const stageTemplates: PipelineStage[] = [
   { id: "build", label: "Build wheel", status: "pending" }
 ];
 
+const runs = new Map<string, RuntimeRun>();
+
 export function getCurrentRun(): PipelineRun | null {
   for (const runtime of runs.values()) {
     if (runtime.run.status === "running") {
@@ -196,6 +198,7 @@ async function executePipeline(runtime: RuntimeRun, config: BuildConfig): Promis
   try {
     let previousRun: PipelineRun | null = null;
     let skippedStages: string[] = [];
+    let activeConfig: BuildConfig = { ...config };
 
     // Load previous run if resuming
     if (config.resumeFromRunId) {
@@ -208,30 +211,30 @@ async function executePipeline(runtime: RuntimeRun, config: BuildConfig): Promis
 
     // Store current build config for future resume operations
     runtime.run.buildConfig = {
-      selectedRef: config.selectedRef,
-      selectedRefKind: config.selectedRefKind,
-      pytorchDir: config.pytorchDir
+      selectedRef: activeConfig.selectedRef,
+      selectedRefKind: activeConfig.selectedRefKind,
+      pytorchDir: activeConfig.pytorchDir
     };
 
     // Checkout stage
-    if (previousRun && shouldSkipStage(previousRun, "checkout", config, config.resumeFromStage)) {
-      const validCheckout = await isGitRepoValid(config);
+    if (previousRun && shouldSkipStage(previousRun, "checkout", activeConfig, activeConfig.resumeFromStage)) {
+      const validCheckout = await isGitRepoValid(activeConfig);
       if (!validCheckout) {
         log(runtime, "Existing checkout is invalid; cleaning folder and retrying from scratch.");
-        await cleanupCheckoutFolder(config);
+        await cleanupCheckoutFolder(activeConfig);
         previousRun = null;
       }
     }
 
-    if (!previousRun || !shouldSkipStage(previousRun, "checkout", config, config.resumeFromStage)) {
+    if (!previousRun || !shouldSkipStage(previousRun, "checkout", activeConfig, activeConfig.resumeFromStage)) {
       setStage(runtime, "checkout", "running");
       try {
-        await runPlans(runtime, createCheckoutPlan(config));
+        await runPlans(runtime, createCheckoutPlan(activeConfig));
       } catch (error) {
         log(runtime, `Checkout failed: ${error instanceof Error ? error.message : String(error)}`);
-        await cleanupCheckoutFolder(config);
+        await cleanupCheckoutFolder(activeConfig);
         log(runtime, "Retrying checkout with a fresh clone.");
-        await runPlans(runtime, createCheckoutPlan(config, true));
+        await runPlans(runtime, createCheckoutPlan(activeConfig, true));
       }
       setStage(runtime, "checkout", "succeeded");
     } else {
@@ -246,10 +249,24 @@ async function executePipeline(runtime: RuntimeRun, config: BuildConfig): Promis
 
     // Prepare env.json stage
     let envJson = previousRun?.envJson;
-    if (!previousRun || !shouldSkipStage(previousRun, "prepare", config, config.resumeFromStage)) {
+    const applyCondaFromEnvJson = (value: unknown) => {
+      if (!value || typeof value !== "object") return;
+      const envConda = (value as { conda?: { executable?: string; install_root?: string; bootstrap_installed?: boolean } }).conda;
+      if (envConda?.executable) {
+        activeConfig = {
+          ...activeConfig,
+          condaExecutable: envConda.executable,
+          condaInstallRoot: envConda.install_root,
+          condaBootstrapInstalled: envConda.bootstrap_installed
+        };
+      }
+    };
+
+    if (!previousRun || !shouldSkipStage(previousRun, "prepare", activeConfig, activeConfig.resumeFromStage)) {
       setStage(runtime, "prepare", "running");
-      envJson = await prepareEnvironment(config);
+      envJson = await prepareEnvironment(activeConfig);
       runtime.run.envJson = envJson;
+      applyCondaFromEnvJson(envJson);
       log(runtime, "Generated src/env.json");
       setStage(runtime, "prepare", "succeeded");
     } else {
@@ -259,13 +276,14 @@ async function executePipeline(runtime: RuntimeRun, config: BuildConfig): Promis
         const stageIdx = runtime.run.stages.findIndex((s) => s.id === "prepare");
         if (stageIdx !== -1) runtime.run.stages[stageIdx] = { ...stage };
       }
+      applyCondaFromEnvJson(envJson);
       log(runtime, "Skipping prepare (already succeeded)");
     }
 
     // Dependencies stage
-    if (!previousRun || !shouldSkipStage(previousRun, "dependencies", config, config.resumeFromStage)) {
+    if (!previousRun || !shouldSkipStage(previousRun, "dependencies", activeConfig, activeConfig.resumeFromStage)) {
       setStage(runtime, "dependencies", "running");
-      await runPlans(runtime, createDependencyPlan(config));
+      await runPlans(runtime, createDependencyPlan(activeConfig));
       setStage(runtime, "dependencies", "succeeded");
     } else {
       skippedStages.push("dependencies");
@@ -278,10 +296,10 @@ async function executePipeline(runtime: RuntimeRun, config: BuildConfig): Promis
     }
 
     // Build stage (always run unless explicitly at this stage and skipping)
-    if (!previousRun || !shouldSkipStage(previousRun, "build", config, config.resumeFromStage)) {
+    if (!previousRun || !shouldSkipStage(previousRun, "build", activeConfig, activeConfig.resumeFromStage)) {
       setStage(runtime, "build", "running");
       if (!envJson) throw new Error("envJson is required for build stage");
-      await runPlans(runtime, createBuildPlan(config, (envJson as any).build.python_executable, (envJson as any).environment));
+      await runPlans(runtime, createBuildPlan(activeConfig, (envJson as any).build.python_executable, (envJson as any).environment));
       setStage(runtime, "build", "succeeded");
     } else {
       skippedStages.push("build");
@@ -318,6 +336,7 @@ export async function startPipeline(config: BuildConfig): Promise<PipelineRun> {
     cancelled: false
   };
   runs.set(id, runtime);
+  await persistRunState(runtime.run);
   void executePipeline(runtime, config);
   return runtime.run;
 }

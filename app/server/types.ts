@@ -17,11 +17,29 @@ export interface BuildOption {
   source: "curated" | "parsed";
 }
 
+export type ToolStatus = "not_installed" | "installed" | "outdated" | "wrong_version";
+
+export interface ToolVersion {
+  found: boolean;
+  version?: string;
+  path?: string;
+  status: ToolStatus;
+}
+
+export interface EnvironmentIssue {
+  tool: string;
+  severity: "info" | "warn" | "error";
+  message: string;
+}
+
 export interface BuildConfig {
   selectedRef: string;
   selectedRefKind: VersionKind;
   pytorchDir: string;
   condaEnv: string;
+  condaExecutable?: string;
+  condaInstallRoot?: string;
+  condaBootstrapInstalled?: boolean;
   pythonVersion: string;
   cudaVersion: string;
   cudaRoot: string;
@@ -36,6 +54,19 @@ export interface BuildConfig {
   forceDependencies: boolean;
   resumeFromStage?: string;
   resumeFromRunId?: string;
+  selectedToolchain?: Record<string, string>;
+}
+
+export interface EnvironmentStatus {
+  ready: boolean;
+  tools: Record<string, ToolVersion>;
+  issues: EnvironmentIssue[];
+  conda: {
+    present: boolean;
+    bootstrapInstalled: boolean;
+    executable?: string;
+    installRoot?: string;
+  };
   selectedToolchain?: Record<string, string>;
 }
 
@@ -83,6 +114,9 @@ export interface BuildEnvironment {
     python_executable: string;
     prefix: string;
     python_version: string;
+    executable?: string;
+    install_root?: string;
+    bootstrap_installed?: boolean;
   };
   cuda: {
     version: string;
@@ -98,4 +132,9 @@ export interface BuildEnvironment {
     cleanup_paths: string[];
   };
   environment: Record<string, string>;
+}
+
+export interface EnvironmentPrepareResult {
+  status: EnvironmentStatus;
+  environment: BuildEnvironment;
 }

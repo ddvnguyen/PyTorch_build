@@ -16,11 +16,29 @@ export interface BuildOption {
   source: "curated" | "parsed";
 }
 
+export type ToolStatus = "not_installed" | "installed" | "outdated" | "wrong_version";
+
+export interface ToolVersion {
+  found: boolean;
+  version?: string;
+  path?: string;
+  status: ToolStatus;
+}
+
+export interface EnvironmentIssue {
+  tool: string;
+  severity: "info" | "warn" | "error";
+  message: string;
+}
+
 export interface BuildConfig {
   selectedRef: string;
   selectedRefKind: VersionKind;
   pytorchDir: string;
   condaEnv: string;
+  condaExecutable?: string;
+  condaInstallRoot?: string;
+  condaBootstrapInstalled?: boolean;
   pythonVersion: string;
   cudaVersion: string;
   cudaRoot: string;
@@ -33,6 +51,19 @@ export interface BuildConfig {
   extraEnv: Record<string, string>;
   skipTest: boolean;
   forceDependencies: boolean;
+}
+
+export interface EnvironmentStatus {
+  ready: boolean;
+  tools: Record<string, ToolVersion>;
+  issues: EnvironmentIssue[];
+  conda: {
+    present: boolean;
+    bootstrapInstalled: boolean;
+    executable?: string;
+    installRoot?: string;
+  };
+  selectedToolchain?: Record<string, string>;
 }
 
 export type StageStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
@@ -61,4 +92,36 @@ export interface VersionsResponse {
   releases: VersionOption[];
   tags: VersionOption[];
   defaultRef: string;
+}
+
+export interface EnvironmentPrepareResult {
+  status: EnvironmentStatus;
+  environment: {
+    generated_at: string;
+    platform: "windows" | "linux";
+    pytorch_dir: string;
+    conda: {
+      env_name: string;
+      python_executable: string;
+      prefix: string;
+      python_version: string;
+      executable?: string;
+      install_root?: string;
+      bootstrap_installed?: boolean;
+    };
+    cuda: {
+      version: string;
+      cuda_home: string;
+      cudnn_root: string;
+      magma_dir: string;
+    };
+    toolchain: Record<string, string>;
+    build: {
+      working_directory: string;
+      python_executable: string;
+      command: string[];
+      cleanup_paths: string[];
+    };
+    environment: Record<string, string>;
+  };
 }
